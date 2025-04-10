@@ -32,6 +32,30 @@ module.exports = function setupRoutes(app, auth) {
     }
   });
 
+  app.get("/events/monthly", async (req, res) => {
+    const { year, month } = req.query;
+    if (!year || !month) return res.status(400).send("Missing year or month");
+
+    const y = parseInt(year);
+    const m = parseInt(month) - 1; // JS Date months are 0-indexed
+
+    const timeMin = new Date(Date.UTC(y, m, 1)).toISOString();
+    const timeMax = new Date(Date.UTC(y, m + 1, 0, 23, 59, 59)).toISOString();
+
+    try {
+      const result = await calendar.events.list({
+        calendarId: "primary",
+        singleEvents: true,
+        orderBy: "startTime",
+        timeMin,
+        timeMax,
+      });
+      res.json(result.data.items);
+    } catch (err) {
+      res.status(500).send(err);
+    }
+  });
+
   // 🔹 List events from a specific calendar (with optional date filtering)
   app.get("/events/:calendarId", async (req, res) => {
     const { calendarId } = req.params;
