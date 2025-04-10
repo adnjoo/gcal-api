@@ -12,7 +12,7 @@ Simple Node.js app using the Google Calendar API.
 2. Run `npm install`
 3. Start script:  
    ```bash
-   npm start
+   npm run dev
    ```
 
 ## API (with Express)
