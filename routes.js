@@ -8,17 +8,52 @@ async function getBlockChildren(blockId) {
   return await notion.blocks.children.list({ block_id: blockId });
 }
 
-async function getAllChildrenRecursive(blockId) {
-  const result = await notion.blocks.children.list({ block_id: blockId });
-  const blocks = result.results;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  for (const block of blocks) {
+async function getAllChildrenRecursive(blockId, depth = 0, maxDepth = 1) {
+  if (depth > maxDepth) return [];
+
+  console.log(
+    `${"  ".repeat(
+      depth
+    )}📦 Fetching children of block ${blockId} at depth ${depth}`
+  );
+
+  const allBlocks = [];
+  let cursor = undefined;
+
+  do {
+    const response = await notion.blocks.children.list({
+      block_id: blockId,
+      start_cursor: cursor,
+    });
+
+    for (const block of response.results) {
+      console.log(
+        `${"  ".repeat(depth)}↳ Got block ${block.id} [${block.type}]`
+      );
+    }
+
+    allBlocks.push(...response.results);
+    cursor = response.has_more ? response.next_cursor : null;
+
+    await sleep(100); // gentle throttle
+  } while (cursor);
+
+  for (const block of allBlocks) {
     if (block.has_children) {
-      block.children = await getAllChildrenRecursive(block.id);
+      await sleep(100);
+      block.children = await getAllChildrenRecursive(
+        block.id,
+        depth + 1,
+        maxDepth
+      );
     }
   }
 
-  return blocks;
+  return allBlocks;
 }
 
 module.exports = function setupRoutes(app, auth) {
