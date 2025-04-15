@@ -69,9 +69,21 @@ module.exports = function setupRoutes(app, auth) {
     }
   });
 
-  // 🔹 List events from primary calendar
+  // 🔹 List events from primary calendar (for current year)
   app.get("/events", async (req, res) => {
-    const { timeMin, timeMax } = req.query;
+    let { timeMin, timeMax } = req.query;
+
+    // If not provided, default to current year
+    const now = new Date();
+    const thisYear = now.getFullYear();
+
+    if (!timeMin) {
+      timeMin = new Date(Date.UTC(thisYear, 0, 1)).toISOString(); // Jan 1
+    }
+
+    if (!timeMax) {
+      timeMax = new Date(Date.UTC(thisYear + 1, 0, 1)).toISOString(); // Jan 1 next year
+    }
 
     try {
       const result = await calendar.events.list({
@@ -79,8 +91,8 @@ module.exports = function setupRoutes(app, auth) {
         singleEvents: true,
         orderBy: "startTime",
         maxResults: 2500,
-        timeMin: timeMin || undefined,
-        timeMax: timeMax || undefined,
+        timeMin,
+        timeMax,
       });
       res.json(result.data.items);
     } catch (err) {
