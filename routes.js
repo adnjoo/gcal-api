@@ -1,5 +1,6 @@
 const { google } = require("googleapis");
 const { Client } = require("@notionhq/client");
+const generateIntentionEvent = require("./lib/generateIntentionEvent");
 
 // 🧠 Notion client setup
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
@@ -20,14 +21,15 @@ function cleanEvent(event) {
     start: event.start?.dateTime || event.start?.date,
     end: event.end?.dateTime || event.end?.date,
     location: event.location || null,
-    attendees: event.attendees?.map(a => ({
-      email: a.email,
-      responseStatus: a.responseStatus
-    })) || [],
+    attendees:
+      event.attendees?.map((a) => ({
+        email: a.email,
+        responseStatus: a.responseStatus,
+      })) || [],
     colorId: event.colorId || null,
     htmlLink: event.htmlLink || null,
     hangoutLink: event.hangoutLink || null,
-    eventType: event.eventType || "default"
+    eventType: event.eventType || "default",
   };
 }
 
@@ -195,6 +197,30 @@ module.exports = function setupRoutes(app, auth) {
       const data = await getAllChildrenRecursive(req.params.blockId);
       res.json(data);
     } catch (err) {
+      res.status(500).send(err.message);
+    }
+  });
+
+  app.post("/intentions", async (req, res) => {
+    const { feeling, start, end } = req.body;
+
+    try {
+      const intention = await generateIntentionEvent(feeling);
+
+      const event = await calendar.events.insert({
+        calendarId: "primary",
+        resource: {
+          summary: intention.summary,
+          description: intention.description,
+          start: { dateTime: start },
+          end: { dateTime: end },
+          colorId: intention.colorId,
+        },
+      });
+
+      res.json(event.data);
+    } catch (err) {
+      console.error("Error creating intention:", err);
       res.status(500).send(err.message);
     }
   });
