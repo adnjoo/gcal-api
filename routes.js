@@ -12,6 +12,25 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function cleanEvent(event) {
+  return {
+    id: event.id,
+    summary: event.summary || "",
+    description: event.description || "",
+    start: event.start?.dateTime || event.start?.date,
+    end: event.end?.dateTime || event.end?.date,
+    location: event.location || null,
+    attendees: event.attendees?.map(a => ({
+      email: a.email,
+      responseStatus: a.responseStatus
+    })) || [],
+    colorId: event.colorId || null,
+    htmlLink: event.htmlLink || null,
+    hangoutLink: event.hangoutLink || null,
+    eventType: event.eventType || "default"
+  };
+}
+
 async function getAllChildrenRecursive(blockId, depth = 0, maxDepth = 1) {
   if (depth > maxDepth) return [];
 
@@ -119,7 +138,7 @@ module.exports = function setupRoutes(app, auth) {
         timeMin,
         timeMax,
       });
-      res.json(result.data.items);
+      res.json(result.data.items.map(cleanEvent));
     } catch (err) {
       res.status(500).send(err.message);
     }
