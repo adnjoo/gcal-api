@@ -1,6 +1,11 @@
 const { google } = require("googleapis");
 const { Client } = require("@notionhq/client");
+const { OpenAI } = require("openai");
+
 const generateIntentionEvent = require("./lib/generateIntentionEvent");
+
+// OpenAI client setup
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // 🧠 Notion client setup
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
@@ -221,6 +226,84 @@ module.exports = function setupRoutes(app, auth) {
       res.json(event.data);
     } catch (err) {
       console.error("Error creating intention:", err);
+      res.status(500).send(err.message);
+    }
+  });
+
+  app.post("/focus-edit", async (req, res) => {
+    const { intention, start, end } = req.body;
+
+    if (!intention) return res.status(400).send("Missing intention");
+
+    try {
+      // 1. Fetch events in range (default to next 7 days if not provided)
+      const timeMin = start || new Date().toISOString();
+      const timeMax =
+        end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const eventsRes = await calendar.events.list({
+        calendarId: "primary",
+        timeMin,
+        timeMax,
+        singleEvents: true,
+        orderBy: "startTime",
+        q: "Focus Session", // only search for these
+      });
+
+      const focusedSessions = eventsRes.data.items || [];
+
+      if (focusedSessions.length === 0) {
+        return res.status(200).json({ message: "No Focused Sessions found." });
+      }
+
+      console.log(`📅 Found ${focusedSessions.length} Focused Sessions`);
+
+      // 2. Generate updated description with GPT
+      const prompt = `Given this intention: "${intention}", suggest 3 gentle, emotionally intelligent tasks that help the user move toward their goal. Format as a bullet list.`;
+
+      const gptRes = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You're a calm productivity coach who writes soft, emotionally aware todos.",
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+
+      const newDescription = gptRes.choices[0].message.content.trim();
+
+      // 3. Rate-limit-safe patch loop
+      const updates = [];
+
+      for (const event of focusedSessions) {
+        try {
+          const updated = await calendar.events.patch({
+            calendarId: "primary",
+            eventId: event.id,
+            resource: {
+              description: newDescription,
+            },
+          });
+
+          updates.push({
+            id: event.id,
+            summary: event.summary,
+            updated: true,
+          });
+
+          console.log(`✅ Updated: ${event.summary} (${event.id})`);
+          await sleep(300); // 🔄 gentle delay
+        } catch (patchErr) {
+          console.error(`❌ Failed to update ${event.id}:`, patchErr.message);
+        }
+      }
+
+      res.json({ updates });
+    } catch (err) {
+      console.error("Error in /focus-edit:", err);
       res.status(500).send(err.message);
     }
   });
