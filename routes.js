@@ -10,6 +10,18 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // 🧠 Notion client setup
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
+const typeMap = {
+  paragraph: "p",
+  bulleted_list_item: "bullet",
+  numbered_list_item: "number",
+  child_page: "page",
+  to_do: "todo",
+  heading_1: "h1",
+  heading_2: "h2",
+  heading_3: "h3",
+  code: "code",
+};
+
 async function getBlockChildren(blockId) {
   return await notion.blocks.children.list({ block_id: blockId });
 }
@@ -84,27 +96,31 @@ async function getAllChildrenRecursive(blockId, depth = 0, maxDepth = 1) {
 
 function compressBlocks(blocks) {
   return blocks
-    .map(block => {
-      // Extract text safely inside compress
+    .map((block) => {
+      const mappedType = typeMap[block.type] || block.type;
       let text = "";
-      if (block[block.type]?.rich_text) {
-        text = block[block.type].rich_text.map(t => t.plain_text).join("") || "";
+
+      if (block.type === "child_page") {
+        text = block.child_page?.title || "";
+      } else if (block[block.type]?.rich_text) {
+        text =
+          block[block.type].rich_text.map((t) => t.plain_text).join("") || "";
       }
 
       if (block.has_children && block.children && block.children.length > 0) {
-        return [
-          block.type,
-          compressBlocks(block.children)
-        ];
+        return [mappedType, compressBlocks(block.children)];
       } else {
-        return [block.type, text];
+        return [mappedType, text];
       }
     })
     .filter(([type, content]) => {
+      if (type === "page") {
+        return true; // 🔥 always keep pages
+      }
       if (Array.isArray(content)) {
-        return content.length > 0; // keep if children are non-empty
+        return content.length > 0;
       } else {
-        return content.trim() !== ""; // keep if text is non-empty
+        return content.trim() !== "";
       }
     });
 }
