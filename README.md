@@ -22,11 +22,12 @@ Simple Node.js app using the Google Calendar API and Notion API.
    NOTION_TOKEN=secret_abc123...
    OPENAI_API_KEY=sk-...
    ```
-3. Install dependencies:
+3. If you encounter an invalid_grant error, run the app and authenticate via OAuth2 to generate a new token.json for Google Calendar access.
+4. Install dependencies:
    ```bash
    npm install
    ```
-4. Start the dev server:
+5. Start the dev server:
    ```bash
    npm run dev
    ```
