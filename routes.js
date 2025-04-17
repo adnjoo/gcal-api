@@ -98,8 +98,8 @@ function compressBlocks(blocks) {
   return blocks
     .map((block) => {
       const mappedType = typeMap[block.type] || block.type;
-      let text = "";
 
+      let text = "";
       if (block.type === "child_page") {
         text = block.child_page?.title || "";
       } else if (block[block.type]?.rich_text) {
@@ -108,14 +108,22 @@ function compressBlocks(blocks) {
       }
 
       if (block.has_children && block.children && block.children.length > 0) {
-        return [mappedType, compressBlocks(block.children)];
+        if (block.type === "child_page") {
+          return [
+            mappedType,
+            text,
+            compressBlocks(block.children), // 🧠 capture children and title
+          ];
+        } else {
+          return [mappedType, compressBlocks(block.children)];
+        }
       } else {
         return [mappedType, text];
       }
     })
     .filter(([type, content]) => {
       if (type === "page") {
-        return true; // 🔥 always keep pages
+        return true; // Always keep page blocks
       }
       if (Array.isArray(content)) {
         return content.length > 0;
