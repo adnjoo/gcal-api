@@ -1,6 +1,11 @@
 const { google } = require("googleapis");
 const { Client } = require("@notionhq/client");
+const { OpenAI } = require("openai");
+
 const generateIntentionEvent = require("./lib/generateIntentionEvent");
+
+// OpenAI client setup
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // 🧠 Notion client setup
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
@@ -221,6 +226,90 @@ module.exports = function setupRoutes(app, auth) {
       res.json(event.data);
     } catch (err) {
       console.error("Error creating intention:", err);
+      res.status(500).send(err.message);
+    }
+  });
+
+  app.post("/focus-edit", async (req, res) => {
+    const { intention, start, end } = req.body;
+    if (!intention) return res.status(400).send("Missing intention");
+
+    try {
+      const timeMin = start || new Date().toISOString();
+      const timeMax =
+        end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const eventsRes = await calendar.events.list({
+        calendarId: "primary",
+        timeMin,
+        timeMax,
+        singleEvents: true,
+        orderBy: "startTime",
+        q: "Focus Session",
+      });
+
+      const focusedSessions = (eventsRes.data.items || []).filter(
+        (e) => e.summary === "Focus Session"
+      );
+
+      if (focusedSessions.length === 0) {
+        return res.status(200).json({ message: "No Focus Sessions found." });
+      }
+
+      console.log(`📅 Found ${focusedSessions.length} Focus Sessions`);
+
+      // 💡 Generate different GPT descriptions per day
+      const prompt = `Given the weekly goal "${intention}", generate a 5-day sequence of emotionally intelligent and practical tasks (one set per day) that help the user move toward their goal. Return them as a JSON array of strings. Each string should be 3 bullet points for that day.`;
+
+      const gptRes = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You're a practical yet kind productivity coach. You return JSON arrays of task descriptions.",
+          },
+          { role: "user", content: prompt },
+        ],
+      });
+
+      const taskSetsRaw = gptRes.choices?.[0]?.message?.content || "[]";
+      const taskSets = JSON.parse(taskSetsRaw);
+
+      const updates = [];
+
+      for (let i = 0; i < focusedSessions.length; i++) {
+        const session = focusedSessions[i];
+        const dayTasks = taskSets[i] || taskSets[taskSets.length - 1]; // fallback to last day’s tasks
+
+        try {
+          const updated = await calendar.events.patch({
+            calendarId: "primary",
+            eventId: session.id,
+            resource: {
+              description: dayTasks,
+            },
+          });
+
+          updates.push({
+            id: session.id,
+            summary: session.summary,
+            date: session.start?.dateTime || session.start?.date,
+            updated: true,
+          });
+
+          console.log(
+            `✅ Patched: ${session.summary} on ${session.start?.dateTime}`
+          );
+          await sleep(500); // 💧 rate-limit buffer
+        } catch (patchErr) {
+          console.error(`❌ Failed on ${session.id}:`, patchErr.message);
+        }
+      }
+
+      res.json({ updates });
+    } catch (err) {
+      console.error("Error in /focus-edit:", err);
       res.status(500).send(err.message);
     }
   });
