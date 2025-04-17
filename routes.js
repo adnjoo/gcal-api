@@ -82,6 +82,33 @@ async function getAllChildrenRecursive(blockId, depth = 0, maxDepth = 1) {
   return allBlocks;
 }
 
+function compressBlocks(blocks) {
+  return blocks
+    .map(block => {
+      // Extract text safely inside compress
+      let text = "";
+      if (block[block.type]?.rich_text) {
+        text = block[block.type].rich_text.map(t => t.plain_text).join("") || "";
+      }
+
+      if (block.has_children && block.children && block.children.length > 0) {
+        return [
+          block.type,
+          compressBlocks(block.children)
+        ];
+      } else {
+        return [block.type, text];
+      }
+    })
+    .filter(([type, content]) => {
+      if (Array.isArray(content)) {
+        return content.length > 0; // keep if children are non-empty
+      } else {
+        return content.trim() !== ""; // keep if text is non-empty
+      }
+    });
+}
+
 module.exports = function setupRoutes(app, auth) {
   const calendar = google.calendar({ version: "v3", auth });
 
@@ -200,7 +227,7 @@ module.exports = function setupRoutes(app, auth) {
   app.get("/notion/:blockId/all", async (req, res) => {
     try {
       const data = await getAllChildrenRecursive(req.params.blockId);
-      res.json(data);
+      res.json(compressBlocks(data));
     } catch (err) {
       res.status(500).send(err.message);
     }
