@@ -232,11 +232,9 @@ module.exports = function setupRoutes(app, auth) {
 
   app.post("/focus-edit", async (req, res) => {
     const { intention, start, end } = req.body;
-
     if (!intention) return res.status(400).send("Missing intention");
 
     try {
-      // 1. Fetch events in range (default to next 7 days if not provided)
       const timeMin = start || new Date().toISOString();
       const timeMax =
         end || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -247,19 +245,21 @@ module.exports = function setupRoutes(app, auth) {
         timeMax,
         singleEvents: true,
         orderBy: "startTime",
-        q: "Focus Session", // only search for these
+        q: "Focus Session",
       });
 
-      const focusedSessions = eventsRes.data.items || [];
+      const focusedSessions = (eventsRes.data.items || []).filter(
+        (e) => e.summary === "Focus Session"
+      );
 
       if (focusedSessions.length === 0) {
-        return res.status(200).json({ message: "No Focused Sessions found." });
+        return res.status(200).json({ message: "No Focus Sessions found." });
       }
 
-      console.log(`📅 Found ${focusedSessions.length} Focused Sessions`);
+      console.log(`📅 Found ${focusedSessions.length} Focus Sessions`);
 
-      // 2. Generate updated description with GPT
-      const prompt = `Given this intention: "${intention}", suggest 3 gentle, emotionally intelligent tasks that help the user move toward their goal. Format as a bullet list.`;
+      // 💡 Generate different GPT descriptions per day
+      const prompt = `Given the weekly goal "${intention}", generate a 5-day sequence of emotionally intelligent and practical tasks (one set per day) that help the user move toward their goal. Return them as a JSON array of strings. Each string should be 3 bullet points for that day.`;
 
       const gptRes = await openai.chat.completions.create({
         model: "gpt-4",
@@ -267,37 +267,43 @@ module.exports = function setupRoutes(app, auth) {
           {
             role: "system",
             content:
-              "You're a calm productivity coach who writes soft, emotionally aware todos.",
+              "You're a practical yet kind productivity coach. You return JSON arrays of task descriptions.",
           },
           { role: "user", content: prompt },
         ],
       });
 
-      const newDescription = gptRes.choices[0].message.content.trim();
+      const taskSetsRaw = gptRes.choices?.[0]?.message?.content || "[]";
+      const taskSets = JSON.parse(taskSetsRaw);
 
-      // 3. Rate-limit-safe patch loop
       const updates = [];
 
-      for (const event of focusedSessions) {
+      for (let i = 0; i < focusedSessions.length; i++) {
+        const session = focusedSessions[i];
+        const dayTasks = taskSets[i] || taskSets[taskSets.length - 1]; // fallback to last day’s tasks
+
         try {
           const updated = await calendar.events.patch({
             calendarId: "primary",
-            eventId: event.id,
+            eventId: session.id,
             resource: {
-              description: newDescription,
+              description: dayTasks,
             },
           });
 
           updates.push({
-            id: event.id,
-            summary: event.summary,
+            id: session.id,
+            summary: session.summary,
+            date: session.start?.dateTime || session.start?.date,
             updated: true,
           });
 
-          console.log(`✅ Updated: ${event.summary} (${event.id})`);
-          await sleep(300); // 🔄 gentle delay
+          console.log(
+            `✅ Patched: ${session.summary} on ${session.start?.dateTime}`
+          );
+          await sleep(500); // 💧 rate-limit buffer
         } catch (patchErr) {
-          console.error(`❌ Failed to update ${event.id}:`, patchErr.message);
+          console.error(`❌ Failed on ${session.id}:`, patchErr.message);
         }
       }
 
