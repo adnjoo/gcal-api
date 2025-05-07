@@ -291,6 +291,7 @@ module.exports = function setupRoutes(app, auth) {
     const { databaseId } = req.params;
     const { instruction, dryRun } = req.body;
     const limit = parseInt(req.query.limit || "10");
+    const startCursor = req.query.cursor || undefined;
 
     if (!instruction) return res.status(400).send("Missing instruction");
 
@@ -299,6 +300,7 @@ module.exports = function setupRoutes(app, auth) {
         database_id: databaseId,
         sorts: [{ timestamp: "created_time", direction: "descending" }],
         page_size: limit,
+        start_cursor: startCursor,
       });
 
       const rawEntries = response.results.map((page) => {
@@ -317,7 +319,7 @@ module.exports = function setupRoutes(app, auth) {
               entry[key] = value.date?.start || "";
               break;
             default:
-              entry[key] = ""; // unsupported field types skipped
+              entry[key] = ""; // unsupported types skipped
           }
         }
 
@@ -346,7 +348,7 @@ module.exports = function setupRoutes(app, auth) {
       });
 
       let raw = aiRes.choices?.[0]?.message?.content || "[]";
-      raw = raw.trim().replace(/^.*?\[\s*{/, "[{"); // strip non-JSON prefix
+      raw = raw.trim().replace(/^.*?\[\s*{/, "[{"); // strip prefix
       const match = raw.match(/\[\s*{[\s\S]*}\s*\]/);
       const transformed = match ? JSON.parse(match[0]) : [];
 
@@ -398,7 +400,7 @@ module.exports = function setupRoutes(app, auth) {
           });
 
           results.push({ id: updated.id, updated: true, changedFields });
-          await sleep(200); // rate-limit buffer
+          await sleep(200); // gentle throttle
         } catch (err) {
           results.push({ id: updated.id, error: err.message });
         }
@@ -409,6 +411,7 @@ module.exports = function setupRoutes(app, auth) {
           ? "Preview only – no updates made"
           : "Transformed and patched",
         results,
+        nextCursor: response.has_more ? response.next_cursor : null,
       });
     } catch (err) {
       console.error("❌ Error:", err.message);
