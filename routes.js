@@ -257,6 +257,36 @@ module.exports = function setupRoutes(app, auth) {
     }
   });
 
+  // 🔹 Generic route to list entries of a Notion database
+  app.get("/notion/db/:databaseId", async (req, res) => {
+    const { databaseId } = req.params;
+
+    try {
+      const response = await notion.databases.query({
+        database_id: databaseId,
+        sorts: [{ timestamp: "created_time", direction: "descending" }],
+      });
+
+      const data = response.results.map((page) => {
+        const props = page.properties;
+
+        // Try to extract common fields safely
+        return {
+          id: page.id,
+          name: props.Name?.title?.[0]?.plain_text || "(no title)",
+          date: props.Date?.date?.start || null,
+          author: props.Author?.rich_text?.[0]?.plain_text || null,
+          created_time: page.created_time,
+        };
+      });
+
+      res.json(data);
+    } catch (err) {
+      console.error("❌ Error fetching database:", err.message);
+      res.status(500).send(err.message);
+    }
+  });
+
   app.post("/intentions", async (req, res) => {
     const { feeling, start, end } = req.body;
 
