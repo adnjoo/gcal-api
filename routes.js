@@ -287,6 +287,135 @@ module.exports = function setupRoutes(app, auth) {
     }
   });
 
+  app.post("/notion/db/:databaseId/transform", async (req, res) => {
+    const { databaseId } = req.params;
+    const { instruction, dryRun } = req.body;
+    const limit = parseInt(req.query.limit || "10");
+
+    if (!instruction) return res.status(400).send("Missing instruction");
+
+    try {
+      const response = await notion.databases.query({
+        database_id: databaseId,
+        sorts: [{ timestamp: "created_time", direction: "descending" }],
+        page_size: limit,
+      });
+
+      const rawEntries = response.results.map((page) => {
+        const entry = { id: page.id, created_time: page.created_time };
+
+        for (const [key, value] of Object.entries(page.properties)) {
+          const type = value.type;
+          switch (type) {
+            case "title":
+              entry[key] = value.title?.[0]?.plain_text || "";
+              break;
+            case "rich_text":
+              entry[key] = value.rich_text?.[0]?.plain_text || "";
+              break;
+            case "date":
+              entry[key] = value.date?.start || "";
+              break;
+            default:
+              entry[key] = ""; // unsupported field types skipped
+          }
+        }
+
+        return entry;
+      });
+
+      const prompt = `
+  You are a JSON data cleaner. The user said: "${instruction}".
+  Return ONLY a JSON array with the same structure and IDs. Do not include "Output:" or any explanation.
+  
+  Here is the data:
+  ${JSON.stringify(rawEntries, null, 2)}
+  `;
+
+      const aiRes = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You return only clean JSON arrays. No commentary. No headings. No notes.",
+          },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.2,
+      });
+
+      let raw = aiRes.choices?.[0]?.message?.content || "[]";
+      raw = raw.trim().replace(/^.*?\[\s*{/, "[{"); // strip non-JSON prefix
+      const match = raw.match(/\[\s*{[\s\S]*}\s*\]/);
+      const transformed = match ? JSON.parse(match[0]) : [];
+
+      const results = [];
+
+      for (const updated of transformed) {
+        const originalRaw = rawEntries.find((e) => e.id === updated.id);
+        const originalPage = response.results.find((p) => p.id === updated.id);
+        if (!originalRaw || !originalPage) continue;
+
+        const patch = {};
+        const changedFields = {};
+
+        for (const [field, newVal] of Object.entries(updated)) {
+          if (field === "id" || field === "created_time") continue;
+
+          const oldVal = originalRaw[field];
+          if (newVal !== oldVal) {
+            changedFields[field] = { from: oldVal, to: newVal };
+          }
+
+          const type = originalPage.properties[field]?.type;
+          if (!type) continue;
+
+          switch (type) {
+            case "title":
+              patch[field] = { title: [{ text: { content: newVal } }] };
+              break;
+            case "rich_text":
+              patch[field] = { rich_text: [{ text: { content: newVal } }] };
+              break;
+            case "date":
+              patch[field] = { date: { start: newVal } };
+              break;
+            default:
+              break;
+          }
+        }
+
+        if (dryRun) {
+          results.push({ id: updated.id, changedFields });
+          continue;
+        }
+
+        try {
+          await notion.pages.update({
+            page_id: updated.id,
+            properties: patch,
+          });
+
+          results.push({ id: updated.id, updated: true, changedFields });
+          await sleep(200); // rate-limit buffer
+        } catch (err) {
+          results.push({ id: updated.id, error: err.message });
+        }
+      }
+
+      res.json({
+        message: dryRun
+          ? "Preview only – no updates made"
+          : "Transformed and patched",
+        results,
+      });
+    } catch (err) {
+      console.error("❌ Error:", err.message);
+      res.status(500).send(err.message);
+    }
+  });
+
   app.post("/intentions", async (req, res) => {
     const { feeling, start, end } = req.body;
 
