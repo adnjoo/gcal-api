@@ -1,51 +1,62 @@
-# gcal-api
+# 🧠 gcal-api
 
-Simple Node.js app using the Google Calendar API and Notion API.
+*Your feelings. Your focus. On the calendar.*
+A tiny emotional productivity API that connects Google Calendar, Notion, and OpenAI — so you can **turn vibes into action**.
 
-## Features
+---
 
-### Google Calendar
-- 📅 List calendar events
-- 📝 Create new events
-- 🌱 Generate events from emotional intentions
-- 🔐 Uses OAuth2 (`token.json`)
+## ✨ Features
 
-### Notion
-- 📂 Fetch block/page contents
-- 🔄 Recursively retrieve nested blocks
+### 📅 Google Calendar Integration
 
-## Setup
+* `GET /events` — List all primary calendar events
+* `GET /events/monthly?year=2025&month=4` — Pull events for a specific month
+* `GET /events/:calendarId` — Fetch events from any calendar
+* `POST /events` — Create new events
+* `POST /intentions` — **Turn a raw feeling into a gentle, supportive calendar entry**
+* `GET /calendars` — List all accessible calendars
 
-1. Download `credentials.json` from Google Cloud Console.
-2. Create a `.env` file:
+### 🧠 Notion Integration
+
+* `GET /notion/:blockId/children` — Fetch direct children of a block
+* `GET /notion/:blockId/all` — Recursively fetch every nested block, page, and sub-thought
+
+---
+
+## 🛠 Setup
+
+1. **Google Calendar Auth**
+
+   * Get your `credentials.json` from [Google Cloud Console](https://console.cloud.google.com/)
+   * Run the server and authenticate to generate `token.json`
+
+2. **Environment Variables**
+   Create a `.env` file with:
+
    ```
    NOTION_TOKEN=secret_abc123...
    OPENAI_API_KEY=sk-...
    ```
-3. If you encounter an invalid_grant error, run the app and authenticate via OAuth2 to generate a new token.json for Google Calendar access.
-4. Install dependencies:
+
+3. **Install & Run**
+
    ```bash
    npm install
-   ```
-5. Start the dev server:
-   ```bash
    npm run dev
    ```
 
-## API (via Express)
+---
 
-### 🔹 Google Calendar
-| Method | Route                               | Description                        |
-| ------ | ----------------------------------- | ---------------------------------- |
-| GET    | `/events`                           | List primary calendar events       |
-| GET    | `/events/monthly?year=2025&month=4` | Events for specific month          |
-| GET    | `/events/:calendarId`               | Events from a specific calendar    |
-| POST   | `/events`                           | Create a new event                 |
-| POST   | `/intentions`                       | Create a gentle event from feeling |
-| GET    | `/calendars`                        | List all calendars                 |
+## 🔗 Built With
 
-### 🧠 Notion
-| Method | Route                       | Description                        |
-| ------ | --------------------------- | ---------------------------------- |
-| GET    | `/notion/:blockId/children` | List direct children of a block    |
-| GET    | `/notion/:blockId/all`      | Recursively retrieve nested blocks |
+* Node.js + Express
+* Google Calendar API
+* Notion API
+* OpenAI (for `/intentions`)
+
+---
+
+## 💡 Why?
+
+Because your calendar should listen to your **inner world**, not just your deadlines.
+Build emotional awareness into your workflow. One endpoint at a time.
